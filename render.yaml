@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jb-hospitality-walkie-signalling
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: CHANNEL_KEY
+        value: JBHOSPITALITY-DTW-2026-7F4C9B2A-PRIVATE
