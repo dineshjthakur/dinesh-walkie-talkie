@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.dinesh.walkietalkie'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.dinesh.walkietalkie'
+        minSdk 23
+        targetSdk 35
+        versionCode 14
+        versionName '3.10'
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'io.github.webrtc-sdk:android:150.7871.08'
+}
