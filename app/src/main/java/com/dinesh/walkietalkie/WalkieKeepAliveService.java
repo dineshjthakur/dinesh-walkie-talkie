@@ -19,7 +19,9 @@ public class WalkieKeepAliveService extends Service {
     final UUID id=UUID.randomUUID();
     final Map<String,Long> seen=new ConcurrentHashMap<>();
     final Map<String,String> names=new ConcurrentHashMap<>();
-    volatile boolean running=false,ptt=false,callActive=false;\n    volatile boolean autoEnabled=false;\n    ConnectivityManager.NetworkCallback wifiCallback;
+    volatile boolean running=false,ptt=false,callActive=false;
+    volatile boolean autoEnabled=false;
+    ConnectivityManager.NetworkCallback wifiCallback;
     volatile String peerId=null,peerName=null;
     String myName="Staff";
     MulticastSocket socket;InetAddress group;
@@ -32,7 +34,8 @@ public class WalkieKeepAliveService extends Service {
     Notification makeNotification(String text){Intent open=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,1,open,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));return new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"").setSmallIcon(R.drawable.ic_walkie_notification).setContentTitle("JB HOSPITALITY Walkie Talkie").setContentText(text).setOngoing(true).setContentIntent(pi).build();}
     void notifyStatus(String t){if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager.class).notify(41,makeNotification(t));}
     @Override public int onStartCommand(Intent i,int flags,int startId){if(i==null)return START_STICKY;String a=i.getAction();
-        if("AUTO_START".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");startForeground(41,makeNotification("Auto-connect enabled • waiting for Wi-Fi"));registerWifiMonitor();joinLan();}\n        else if("JOIN".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");if(myName==null||myName.trim().isEmpty())myName="Staff";startForeground(41,makeNotification("Joining local Wi-Fi"));joinLan();}
+        if("AUTO_START".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");startForeground(41,makeNotification("Auto-connect enabled • waiting for Wi-Fi"));registerWifiMonitor();joinLan();}
+        else if("JOIN".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");if(myName==null||myName.trim().isEmpty())myName="Staff";startForeground(41,makeNotification("Joining local Wi-Fi"));joinLan();}
         else if("LEAVE".equals(a)){autoEnabled=false;unregisterWifiMonitor();leaveLan();stopForeground(true);stopSelf();}
         else if("PTT_START".equals(a)){ptt=true;startMicrophone();}
         else if("PTT_STOP".equals(a)){ptt=false;if(!callActive)stopMicrophone();}

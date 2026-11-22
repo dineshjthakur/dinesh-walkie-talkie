@@ -1,4 +1,4 @@
-# DINESH THAKUR WALKIE TALKIE v3.14 — AUTO WI-FI / RING / CALL FIX
+# DINESH THAKUR WALKIE TALKIE v3.15 — JAVA SYNTAX FIX
 
 - Removed the Leave Channel control from the main screen.
 - Staff enters their own name once; the name is saved on that device.
