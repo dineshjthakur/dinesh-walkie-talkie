@@ -36,3 +36,9 @@ IMPORTANT:
 - Uses a broadly supported alert beep for incoming RING.
 - Reports receive-loop exceptions in the app status instead of silently swallowing them.
 - Source update only; GitHub build and two-device RING/CALL verification remain required.
+
+
+## Version 3.19 Network thread fix
+- Fixes NetworkOnMainThreadException by queuing UDP packet sends on a dedicated single-thread executor.
+- Applies to RING, CALL/control packets, heartbeats, and outgoing audio packets that use sendPacket().
+- This is a source fix; compile with GitHub Actions and verify RING/CALL on two physical devices.

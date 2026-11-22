@@ -13,6 +13,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WalkieKeepAliveService extends Service {
+    private final java.util.concurrent.ExecutorService networkSendExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
     static final String UPDATE="com.dinesh.walkietalkie.LOCAL_UPDATE",GROUP="239.10.10.10";
     static final int PORT=47655,RATE=16000,FRAME=640,HEADER=33;
     static final byte HEARTBEAT=1,AUDIO=2,RING=3,CALL=4,ACCEPT=5,REJECT=6,END=7,PTT_AUDIO=8;
@@ -91,17 +92,23 @@ public class WalkieKeepAliveService extends Service {
     byte[] uuidBytes(String s){try{UUID u=UUID.fromString(s);return ByteBuffer.allocate(16).putLong(u.getMostSignificantBits()).putLong(u.getLeastSignificantBits()).array();}catch(Exception e){return new byte[16];}}
     String uuidString(byte[] b,int o){ByteBuffer x=ByteBuffer.wrap(b,o,16);return new UUID(x.getLong(),x.getLong()).toString();}
     void sendPacket(byte type,String target,byte[] data){
-        try{
-            if(socket==null||socket.isClosed())return;
-            byte[] p=new byte[HEADER+data.length];
-            p[0]=type;
-            System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
-            System.arraycopy(uuidBytes(target),0,p,17,16);
-            System.arraycopy(data,0,p,HEADER,data.length);
-            // Use the proven LAN multicast path for control and voice packets too.
-            InetAddress destination=group;
-            socket.send(new DatagramPacket(p,p.length,destination,PORT));
-        }catch(Exception e){emit("Network send error: "+e.getClass().getSimpleName(),false);}
+        final byte[] payload = data == null ? new byte[0] : Arrays.copyOf(data, data.length);
+        final String targetId = target;
+        networkSendExecutor.execute(() -> {
+            try{
+                MulticastSocket currentSocket = socket;
+                InetAddress currentGroup = group;
+                if(currentSocket==null||currentSocket.isClosed()||currentGroup==null)return;
+                byte[] p=new byte[HEADER+payload.length];
+                p[0]=type;
+                System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
+                System.arraycopy(uuidBytes(targetId),0,p,17,16);
+                System.arraycopy(payload,0,p,HEADER,payload.length);
+                currentSocket.send(new DatagramPacket(p,p.length,currentGroup,PORT));
+            }catch(Exception e){
+                emit("Network send error: "+e.getClass().getSimpleName(),false);
+            }
+        });
     }
     void sendTarget(byte type,String target,byte[] data){if(target!=null)sendPacket(type,target,data);}
     void heartbeatLoop(){while(running){try{byte[] n=myName.getBytes(StandardCharsets.UTF_8);if(n.length>48)n=Arrays.copyOf(n,48);sendPacket(HEARTBEAT,null,n);long now=System.currentTimeMillis();for(String k:new ArrayList<>(seen.keySet()))if(now-seen.get(k)>45000){seen.remove(k);names.remove(k);peerAddresses.remove(k);}publishUsers();Thread.sleep(2500);}catch(InterruptedException e){return;}}}
@@ -158,6 +165,6 @@ public class WalkieKeepAliveService extends Service {
     void endCall(boolean send){String old=peerId;if(send&&old!=null)sendTarget(END,old,new byte[0]);callActive=false;peerId=null;peerName=null;if(!ptt)stopMicrophone();emitCall("Call ended",false);notifyStatus("Connected • local Wi-Fi");}
     void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(new InetSocketAddress(group,PORT),wifiInterface);socket.close();}}catch(Exception ignored){}socket=null;wifiNetwork=null;wifiInterface=null;peerAddresses.clear();try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
     @Override public void onTaskRemoved(Intent i){super.onTaskRemoved(i);}
-    @Override public void onDestroy(){autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
+    @Override public void onDestroy(){networkSendExecutor.shutdownNow();autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }
