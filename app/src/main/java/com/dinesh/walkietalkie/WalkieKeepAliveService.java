@@ -98,12 +98,8 @@ public class WalkieKeepAliveService extends Service {
             System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
             System.arraycopy(uuidBytes(target),0,p,17,16);
             System.arraycopy(data,0,p,HEADER,data.length);
+            // Use the proven LAN multicast path for control and voice packets too.
             InetAddress destination=group;
-            boolean privatePacket=target!=null&&!target.equals("00000000-0000-0000-0000-000000000000");
-            if(privatePacket){
-                InetAddress peerAddress=peerAddresses.get(target);
-                if(peerAddress!=null)destination=peerAddress;
-            }
             socket.send(new DatagramPacket(p,p.length,destination,PORT));
         }catch(Exception e){emit("Network send error: "+e.getClass().getSimpleName(),false);}
     }
@@ -123,7 +119,7 @@ public class WalkieKeepAliveService extends Service {
         else if(type==ACCEPT){if(from.equals(peerId)){callActive=true;notifyStatus("Two-way call with "+peerName);emitCall("Connected to "+peerName,true);startMicrophone();}}
         else if(type==REJECT){if(from.equals(peerId)){peerId=null;peerName=null;emitCall("Call declined",false);}}
         else if(type==END){if(from.equals(peerId))endCall(false);}
-    }catch(Exception ignored){}}}
+    }catch(Exception e){if(running)emit("Receive error: "+e.getClass().getSimpleName(),false);}}}
     void publishUsers(){ArrayList<String> ns=new ArrayList<>(),ids=new ArrayList<>(),st=new ArrayList<>();ns.add(myName);ids.add("SELF");st.add("1");long now=System.currentTimeMillis();for(String k:seen.keySet()){ns.add(names.getOrDefault(k,"Staff"));ids.add(k);st.add(now-seen.get(k)<=9000?"1":"0");}Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putStringArrayListExtra("users",ns);x.putStringArrayListExtra("ids",ids);x.putStringArrayListExtra("online",st);x.putExtra("count",(int)st.stream().filter("1"::equals).count());x.putExtra("joined",true);x.putExtra("ok",true);x.putExtra("status","Connected • local Wi-Fi");x.putExtra("callActive",callActive);sendBroadcast(x);}
     void emit(String s,boolean ok){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("status",s);x.putExtra("ok",ok);x.putExtra("joined",ok);sendBroadcast(x);}
     void emitCall(String s,boolean active){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("callStatus",s);x.putExtra("callActive",active);x.putExtra("joined",running);x.putExtra("ok",running);sendBroadcast(x);}
@@ -148,7 +144,7 @@ public class WalkieKeepAliveService extends Service {
     void acceptCall(String peer){if(peer==null)return;peerId=peer;peerName=names.getOrDefault(peer,"Staff");sendTarget(ACCEPT,peer,new byte[0]);callActive=true;emitCall("Two-way call with "+peerName,true);notifyStatus("Two-way call with "+peerName);startMicrophone();}
     void incomingRing(String from){
         String caller=names.getOrDefault(from,"Staff");
-        try{if(tone==null)tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,1800);}catch(Exception ignored){}
+        try{if(tone==null)tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);tone.startTone(ToneGenerator.TONE_PROP_BEEP2,1800);}catch(Exception ignored){}
         try{if(Build.VERSION.SDK_INT>=26)((android.os.Vibrator)getSystemService(VIBRATOR_SERVICE)).vibrate(VibrationEffect.createWaveform(new long[]{0,350,180,350,180,700},-1));}catch(Exception ignored){}
         Intent open=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,44,open,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
         Notification.Builder b=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"").setSmallIcon(R.drawable.ic_walkie_notification)

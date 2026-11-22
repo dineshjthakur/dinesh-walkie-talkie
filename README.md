@@ -28,3 +28,11 @@ IMPORTANT:
 - Learns each peer's source IP from heartbeat packets and routes private RING/CALL/audio/control packets directly to that peer.
 - Fixes the literal \\n in the app title.
 - Build and two-device testing are still required; router multicast/client-isolation policies can still affect operation.
+
+
+## Version 3.18
+- Enlarged push-to-talk control to 112dp height with 23sp bold label.
+- Routes individual control and call packets over the same multicast LAN channel as the working device-presence path, with recipient UUID filtering at the receiver.
+- Uses a broadly supported alert beep for incoming RING.
+- Reports receive-loop exceptions in the app status instead of silently swallowing them.
+- Source update only; GitHub build and two-device RING/CALL verification remain required.
