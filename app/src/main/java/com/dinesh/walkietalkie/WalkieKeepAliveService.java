@@ -19,6 +19,8 @@ public class WalkieKeepAliveService extends Service {
     final UUID id=UUID.randomUUID();
     final Map<String,Long> seen=new ConcurrentHashMap<>();
     final Map<String,String> names=new ConcurrentHashMap<>();
+    final Map<String,InetAddress> peerAddresses=new ConcurrentHashMap<>();
+    Network wifiNetwork; NetworkInterface wifiInterface;
     volatile boolean running=false,ptt=false,callActive=false;
     volatile boolean autoEnabled=false;
     ConnectivityManager.NetworkCallback wifiCallback;
@@ -46,9 +48,23 @@ public class WalkieKeepAliveService extends Service {
         else if("CALL_END".equals(a)){endCall(true);}
         return START_STICKY;
     }
-    void joinLan(){if(running)return;try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network wifi=null;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}if(wifi==null){emit("Waiting for restaurant Wi-Fi…",false);notifyStatus("Auto-connect enabled • waiting for Wi-Fi");return;}if(!cm.bindProcessToNetwork(wifi)){emit("Cannot bind Wi-Fi network",false);return;}
+    void joinLan(){if(running)return;try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network wifi=null;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}if(wifi==null){emit("Waiting for restaurant Wi-Fi…",false);notifyStatus("Auto-connect enabled • waiting for Wi-Fi");return;}
+        wifiNetwork=wifi;
+        LinkProperties lp=cm.getLinkProperties(wifi);
+        if(lp==null||lp.getInterfaceName()==null){emit("Cannot identify Wi-Fi interface",false);return;}
+        wifiInterface=NetworkInterface.getByName(lp.getInterfaceName());
+        if(wifiInterface==null){emit("Wi-Fi interface unavailable",false);return;}
+        if(!cm.bindProcessToNetwork(wifi)){emit("Cannot bind Wi-Fi network",false);return;}
         WifiManager wm=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);multicastLock=wm.createMulticastLock("JBWalkieMulticast");multicastLock.setReferenceCounted(false);multicastLock.acquire();wifiLock=wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,"JBWalkieWifi");wifiLock.acquire();PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);cpuLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"JBWalkieCpu");cpuLock.acquire();
-        group=InetAddress.getByName(GROUP);socket=new MulticastSocket(null);socket.setReuseAddress(true);socket.bind(new InetSocketAddress(PORT));socket.setTimeToLive(1);socket.joinGroup(group);running=true;new Thread(this::receiveLoop,"LAN-RX").start();new Thread(this::heartbeatLoop,"LAN-Presence").start();emit("Connected • local Wi-Fi",true);notifyStatus("Connected • "+myName+" • background active");
+        group=InetAddress.getByName(GROUP);
+        socket=new MulticastSocket(null);
+        socket.setReuseAddress(true);
+        wifi.bindSocket(socket);
+        socket.setNetworkInterface(wifiInterface);
+        socket.bind(new InetSocketAddress(PORT));
+        socket.setTimeToLive(1);
+        socket.joinGroup(new InetSocketAddress(group,PORT),wifiInterface);
+        running=true;new Thread(this::receiveLoop,"LAN-RX").start();new Thread(this::heartbeatLoop,"LAN-Presence").start();emit("Connected • local Wi-Fi",true);notifyStatus("Connected • "+myName+" • background active");
     }catch(Exception e){emit("Wi-Fi error: "+e.getMessage(),false);leaveLan();stopSelf();}}
     void registerWifiMonitor(){
         try{
@@ -74,11 +90,32 @@ public class WalkieKeepAliveService extends Service {
     }
     byte[] uuidBytes(String s){try{UUID u=UUID.fromString(s);return ByteBuffer.allocate(16).putLong(u.getMostSignificantBits()).putLong(u.getLeastSignificantBits()).array();}catch(Exception e){return new byte[16];}}
     String uuidString(byte[] b,int o){ByteBuffer x=ByteBuffer.wrap(b,o,16);return new UUID(x.getLong(),x.getLong()).toString();}
-    void sendPacket(byte type,String target,byte[] data){try{byte[] p=new byte[HEADER+data.length];p[0]=type;System.arraycopy(uuidBytes(id.toString()),0,p,1,16);System.arraycopy(uuidBytes(target),0,p,17,16);System.arraycopy(data,0,p,HEADER,data.length);socket.send(new DatagramPacket(p,p.length,group,PORT));}catch(Exception ignored){}}
+    void sendPacket(byte type,String target,byte[] data){
+        try{
+            if(socket==null||socket.isClosed())return;
+            byte[] p=new byte[HEADER+data.length];
+            p[0]=type;
+            System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
+            System.arraycopy(uuidBytes(target),0,p,17,16);
+            System.arraycopy(data,0,p,HEADER,data.length);
+            InetAddress destination=group;
+            boolean privatePacket=target!=null&&!target.equals("00000000-0000-0000-0000-000000000000");
+            if(privatePacket){
+                InetAddress peerAddress=peerAddresses.get(target);
+                if(peerAddress!=null)destination=peerAddress;
+            }
+            socket.send(new DatagramPacket(p,p.length,destination,PORT));
+        }catch(Exception e){emit("Network send error: "+e.getClass().getSimpleName(),false);}
+    }
     void sendTarget(byte type,String target,byte[] data){if(target!=null)sendPacket(type,target,data);}
-    void heartbeatLoop(){while(running){try{byte[] n=myName.getBytes(StandardCharsets.UTF_8);if(n.length>48)n=Arrays.copyOf(n,48);sendPacket(HEARTBEAT,null,n);long now=System.currentTimeMillis();for(String k:new ArrayList<>(seen.keySet()))if(now-seen.get(k)>45000){seen.remove(k);names.remove(k);}publishUsers();Thread.sleep(2500);}catch(InterruptedException e){return;}}}
+    void heartbeatLoop(){while(running){try{byte[] n=myName.getBytes(StandardCharsets.UTF_8);if(n.length>48)n=Arrays.copyOf(n,48);sendPacket(HEARTBEAT,null,n);long now=System.currentTimeMillis();for(String k:new ArrayList<>(seen.keySet()))if(now-seen.get(k)>45000){seen.remove(k);names.remove(k);peerAddresses.remove(k);}publishUsers();Thread.sleep(2500);}catch(InterruptedException e){return;}}}
     void receiveLoop(){byte[] buf=new byte[1500];while(running){try{DatagramPacket p=new DatagramPacket(buf,buf.length);socket.receive(p);if(p.getLength()<HEADER)continue;byte type=p.getData()[p.getOffset()];String from=uuidString(p.getData(),p.getOffset()+1),target=uuidString(p.getData(),p.getOffset()+17);if(from.equals(id.toString()))continue;int len=p.getLength()-HEADER;int off=p.getOffset()+HEADER;
-        if(type==HEARTBEAT){seen.put(from,System.currentTimeMillis());names.put(from,new String(p.getData(),off,len,StandardCharsets.UTF_8));publishUsers();}
+        if(type==HEARTBEAT){
+            seen.put(from,System.currentTimeMillis());
+            names.put(from,new String(p.getData(),off,len,StandardCharsets.UTF_8));
+            peerAddresses.put(from,p.getAddress());
+            publishUsers();
+        }
         else if(!target.equals(id.toString())&&!target.equals("00000000-0000-0000-0000-000000000000"))continue;
         else if(type==AUDIO||type==PTT_AUDIO){if(type==PTT_AUDIO||callActive&&from.equals(peerId))play(p.getData(),off,len);}
         else if(type==RING){incomingRing(from);}
@@ -123,7 +160,7 @@ public class WalkieKeepAliveService extends Service {
     void stopMicrophone(){try{if(recorder!=null){recorder.stop();recorder.release();}}catch(Exception ignored){}recorder=null;try{((AudioManager)getSystemService(AUDIO_SERVICE)).setMode(AudioManager.MODE_NORMAL);}catch(Exception ignored){}}
     synchronized void play(byte[] d,int off,int len){try{if(player==null){int min=AudioTrack.getMinBufferSize(RATE,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT);player=new AudioTrack(AudioManager.STREAM_VOICE_CALL,RATE,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min,FRAME*16),AudioTrack.MODE_STREAM);player.play();}player.write(d,off,len);}catch(Exception ignored){}}
     void endCall(boolean send){String old=peerId;if(send&&old!=null)sendTarget(END,old,new byte[0]);callActive=false;peerId=null;peerName=null;if(!ptt)stopMicrophone();emitCall("Call ended",false);notifyStatus("Connected • local Wi-Fi");}
-    void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(group);socket.close();}}catch(Exception ignored){}socket=null;try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
+    void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(new InetSocketAddress(group,PORT),wifiInterface);socket.close();}}catch(Exception ignored){}socket=null;wifiNetwork=null;wifiInterface=null;peerAddresses.clear();try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
     @Override public void onTaskRemoved(Intent i){super.onTaskRemoved(i);}
     @Override public void onDestroy(){autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}

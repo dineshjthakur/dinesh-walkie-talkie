@@ -20,3 +20,11 @@ IMPORTANT:
 - Declares FOREGROUND_SERVICE_MICROPHONE, required for a foreground microphone service on modern Android versions.
 - Runtime microphone permission is still required before enabling auto-connect and voice features.
 - This is a source patch; build and device testing are still required.
+
+
+## Version 3.17 Wi-Fi interface and peer routing patch
+- Binds the UDP socket to the selected Android Wi-Fi Network.
+- Joins the multicast group on the explicit Wi-Fi NetworkInterface.
+- Learns each peer's source IP from heartbeat packets and routes private RING/CALL/audio/control packets directly to that peer.
+- Fixes the literal \\n in the app title.
+- Build and two-device testing are still required; router multicast/client-isolation policies can still affect operation.
