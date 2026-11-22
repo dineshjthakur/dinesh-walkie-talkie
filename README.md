@@ -14,3 +14,9 @@ IMPORTANT:
 - Android force-stop, reboot before the app is opened, OEM battery restrictions, or disabling Wi-Fi can stop the service.
 - Router must allow multicast and device-to-device communication.
 - Ring/call/PTT are LAN UDP prototype features and require testing on two or more devices on the same Wi-Fi.
+
+
+## Version 3.16 Android 16 compatibility patch
+- Declares FOREGROUND_SERVICE_MICROPHONE, required for a foreground microphone service on modern Android versions.
+- Runtime microphone permission is still required before enabling auto-connect and voice features.
+- This is a source patch; build and device testing are still required.
