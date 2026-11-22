@@ -29,11 +29,24 @@ public class WalkieKeepAliveService extends Service {
     String myName="Staff";
     MulticastSocket socket;InetAddress group;
     WifiManager.MulticastLock multicastLock;WifiManager.WifiLock wifiLock;PowerManager.WakeLock cpuLock;
-    AudioRecord recorder;AudioTrack player;ToneGenerator tone;
+    AudioRecord recorder;AudioTrack player;ToneGenerator tone; Ringtone alertRingtone;
     Thread micThread;
 
     @Override public void onCreate(){super.onCreate();createChannel();}
-    void createChannel(){if(Build.VERSION.SDK_INT>=26){NotificationChannel c=new NotificationChannel("jb_walkie_active","JB Hospitality Walkie Talkie",NotificationManager.IMPORTANCE_HIGH);c.setDescription("Local Wi-Fi calls and staff alerts");getSystemService(NotificationManager.class).createNotificationChannel(c);}}
+    void createChannel(){if(Build.VERSION.SDK_INT>=26){
+        NotificationManager nm=getSystemService(NotificationManager.class);
+        NotificationChannel c=new NotificationChannel("jb_walkie_active","JB Hospitality Walkie Talkie",NotificationManager.IMPORTANCE_HIGH);
+        c.setDescription("Walkie Talkie foreground connection");
+        nm.createNotificationChannel(c);
+        NotificationChannel alerts=new NotificationChannel("jb_walkie_loud_alerts","JB Hospitality • Loud Ring and Calls",NotificationManager.IMPORTANCE_HIGH);
+        alerts.setDescription("Loud repeating ringtone and vibration for staff rings and incoming calls");
+        alerts.enableVibration(true);
+        alerts.setVibrationPattern(new long[]{0,500,250,500,250,900});
+        alerts.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        alerts.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+        nm.createNotificationChannel(alerts);
+    }}
     Notification makeNotification(String text){Intent open=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,1,open,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));return new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"").setSmallIcon(R.drawable.ic_walkie_notification).setContentTitle("JB HOSPITALITY Walkie Talkie").setContentText(text).setOngoing(true).setContentIntent(pi).build();}
     void notifyStatus(String t){if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager.class).notify(41,makeNotification(t));}
     @Override public int onStartCommand(Intent i,int flags,int startId){if(i==null)return START_STICKY;String a=i.getAction();
@@ -123,16 +136,17 @@ public class WalkieKeepAliveService extends Service {
         else if(type==AUDIO||type==PTT_AUDIO){if(type==PTT_AUDIO||callActive&&from.equals(peerId))play(p.getData(),off,len);}
         else if(type==RING){incomingRing(from);}
         else if(type==CALL){incomingCall(from);}
-        else if(type==ACCEPT){if(from.equals(peerId)){callActive=true;notifyStatus("Two-way call with "+peerName);emitCall("Connected to "+peerName,true);startMicrophone();}}
-        else if(type==REJECT){if(from.equals(peerId)){peerId=null;peerName=null;emitCall("Call declined",false);}}
-        else if(type==END){if(from.equals(peerId))endCall(false);}
+        else if(type==ACCEPT){if(from.equals(peerId)){stopLoudAlert();callActive=true;notifyStatus("Two-way call with "+peerName);emitCall("Connected to "+peerName,true);startMicrophone();}}
+        else if(type==REJECT){if(from.equals(peerId)){stopLoudAlert();peerId=null;peerName=null;emitCall("Call declined",false);}}
+        else if(type==END){if(from.equals(peerId)){stopLoudAlert();endCall(false);}}
     }catch(Exception e){if(running)emit("Receive error: "+e.getClass().getSimpleName(),false);}}}
     void publishUsers(){ArrayList<String> ns=new ArrayList<>(),ids=new ArrayList<>(),st=new ArrayList<>();ns.add(myName);ids.add("SELF");st.add("1");long now=System.currentTimeMillis();for(String k:seen.keySet()){ns.add(names.getOrDefault(k,"Staff"));ids.add(k);st.add(now-seen.get(k)<=9000?"1":"0");}Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putStringArrayListExtra("users",ns);x.putStringArrayListExtra("ids",ids);x.putStringArrayListExtra("online",st);x.putExtra("count",(int)st.stream().filter("1"::equals).count());x.putExtra("joined",true);x.putExtra("ok",true);x.putExtra("status","Connected • local Wi-Fi");x.putExtra("callActive",callActive);sendBroadcast(x);}
     void emit(String s,boolean ok){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("status",s);x.putExtra("ok",ok);x.putExtra("joined",ok);sendBroadcast(x);}
     void emitCall(String s,boolean active){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("callStatus",s);x.putExtra("callActive",active);x.putExtra("joined",running);x.putExtra("ok",running);sendBroadcast(x);}
-    void callTarget(String target,String name){if(!running||target==null){emitCall("Not connected to local Wi-Fi",false);return;}if(callActive){emitCall("Already in a call",true);return;}peerId=target;peerName=name;sendTarget(CALL,target,new byte[0]);emitCall("Calling "+name+"…",false);notifyStatus("Calling "+name);}
+    void callTarget(String target,String name){if(!running||target==null){emitCall("Not connected to local Wi-Fi",false);return;}if(callActive){emitCall("Already in a call",true);return;}peerId=target;peerName=name;sendTarget(CALL,target,new byte[0]);startLoudAlert();emitCall("Calling "+name+"…",false);notifyStatus("Calling "+name);}
     void incomingCall(String from){
         String caller=names.getOrDefault(from,"Staff");
+        startLoudAlert();
         Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("incomingCaller",caller);x.putExtra("incomingId",from);x.putExtra("joined",true);x.putExtra("ok",true);sendBroadcast(x);
         showIncomingCallNotification(caller,from);
     }
@@ -141,20 +155,45 @@ public class WalkieKeepAliveService extends Service {
         PendingIntent acceptPi=PendingIntent.getService(this,101,accept,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
         Intent decline=new Intent(this,WalkieKeepAliveService.class);decline.setAction("CALL_REJECT");decline.putExtra("peer",from);
         PendingIntent declinePi=PendingIntent.getService(this,102,decline,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
-        Notification.Builder b=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"")
+        Notification.Builder b=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_loud_alerts":"")
             .setSmallIcon(R.drawable.ic_walkie_notification).setContentTitle("Incoming call • JB HOSPITALITY")
             .setContentText(caller+" is calling").setCategory(Notification.CATEGORY_CALL).setPriority(Notification.PRIORITY_MAX)
             .setAutoCancel(true).addAction(new Notification.Action.Builder(null,"ANSWER",acceptPi).build())
             .addAction(new Notification.Action.Builder(null,"DECLINE",declinePi).build());
         getSystemService(NotificationManager.class).notify(43,b.build());
     }
-    void acceptCall(String peer){if(peer==null)return;peerId=peer;peerName=names.getOrDefault(peer,"Staff");sendTarget(ACCEPT,peer,new byte[0]);callActive=true;emitCall("Two-way call with "+peerName,true);notifyStatus("Two-way call with "+peerName);startMicrophone();}
+    void acceptCall(String peer){stopLoudAlert();if(peer==null)return;peerId=peer;peerName=names.getOrDefault(peer,"Staff");sendTarget(ACCEPT,peer,new byte[0]);callActive=true;emitCall("Two-way call with "+peerName,true);notifyStatus("Two-way call with "+peerName);startMicrophone();}
+
+    void startLoudAlert(){
+        try{
+            stopLoudAlert();
+            Uri uri=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if(uri==null)uri=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            alertRingtone=RingtoneManager.getRingtone(getApplicationContext(),uri);
+            if(alertRingtone!=null){
+                if(Build.VERSION.SDK_INT>=21)alertRingtone.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                if(Build.VERSION.SDK_INT>=28)alertRingtone.setLooping(true);
+                alertRingtone.play();
+            }
+            if(Build.VERSION.SDK_INT>=26){
+                Vibrator v=(Vibrator)getSystemService(VIBRATOR_SERVICE);
+                if(v!=null)v.vibrate(VibrationEffect.createWaveform(new long[]{0,500,250,500,250,900},0));
+            }
+        }catch(Exception e){emit("Alert playback error: "+e.getClass().getSimpleName(),false);}
+    }
+    void stopLoudAlert(){
+        try{if(alertRingtone!=null&&alertRingtone.isPlaying())alertRingtone.stop();}catch(Exception ignored){}
+        alertRingtone=null;
+        try{Vibrator v=(Vibrator)getSystemService(VIBRATOR_SERVICE);if(v!=null)v.cancel();}catch(Exception ignored){}
+    }
+
     void incomingRing(String from){
         String caller=names.getOrDefault(from,"Staff");
-        try{if(tone==null)tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);tone.startTone(ToneGenerator.TONE_PROP_BEEP2,1800);}catch(Exception ignored){}
-        try{if(Build.VERSION.SDK_INT>=26)((android.os.Vibrator)getSystemService(VIBRATOR_SERVICE)).vibrate(VibrationEffect.createWaveform(new long[]{0,350,180,350,180,700},-1));}catch(Exception ignored){}
+        startLoudAlert();
         Intent open=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,44,open,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
-        Notification.Builder b=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"").setSmallIcon(R.drawable.ic_walkie_notification)
+        Notification.Builder b=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_loud_alerts":"").setSmallIcon(R.drawable.ic_walkie_notification)
             .setContentTitle("Staff ring • JB HOSPITALITY").setContentText(caller+" is ringing this device").setAutoCancel(true).setContentIntent(pi);
         getSystemService(NotificationManager.class).notify(44,b.build());
         Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("callStatus","RING: "+caller+" is calling");x.putExtra("joined",true);x.putExtra("ok",true);sendBroadcast(x);
@@ -165,6 +204,6 @@ public class WalkieKeepAliveService extends Service {
     void endCall(boolean send){String old=peerId;if(send&&old!=null)sendTarget(END,old,new byte[0]);callActive=false;peerId=null;peerName=null;if(!ptt)stopMicrophone();emitCall("Call ended",false);notifyStatus("Connected • local Wi-Fi");}
     void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(new InetSocketAddress(group,PORT),wifiInterface);socket.close();}}catch(Exception ignored){}socket=null;wifiNetwork=null;wifiInterface=null;peerAddresses.clear();try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
     @Override public void onTaskRemoved(Intent i){super.onTaskRemoved(i);}
-    @Override public void onDestroy(){networkSendExecutor.shutdownNow();autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
+    @Override public void onDestroy(){stopLoudAlert();networkSendExecutor.shutdownNow();autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }

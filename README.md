@@ -42,3 +42,11 @@ IMPORTANT:
 - Fixes NetworkOnMainThreadException by queuing UDP packet sends on a dedicated single-thread executor.
 - Applies to RING, CALL/control packets, heartbeats, and outgoing audio packets that use sendPacket().
 - This is a source fix; compile with GitHub Actions and verify RING/CALL on two physical devices.
+
+
+## Version 3.20 Loud ring and call alerts
+- Adds repeating system ringtone and vibration for incoming RING alerts.
+- Adds repeating ringtone and vibration for incoming CALL alerts until answered/declined; caller also hears ringback until answer/reject/end.
+- Adds a dedicated high-importance notification channel for audible alerts.
+- Android users may need to set this channel to Alerting and enable sound/vibration in App info > Notifications; ringtone volume must be turned up. Android does not permit apps to override a user's silent/DND/volume settings.
+- Source update only; build and two-device alert tests required.
