@@ -50,3 +50,12 @@ IMPORTANT:
 - Adds a dedicated high-importance notification channel for audible alerts.
 - Android users may need to set this channel to Alerting and enable sound/vibration in App info > Notifications; ringtone volume must be turned up. Android does not permit apps to override a user's silent/DND/volume settings.
 - Source update only; build and two-device alert tests required.
+
+
+## Version 3.21 Call timeout and prominent answer notification
+- Outgoing caller device does not play the ringtone; it shows calling status and waits silently.
+- Incoming call alert rings/vibrates for up to 30 seconds, then stops and records a missed call status.
+- Caller gives up after 30 seconds if nobody answers.
+- Incoming call notification is ongoing, public, expanded with BigTextStyle and has a prominent ACCEPT CALL action plus DECLINE.
+- Answer/decline cancels timeout, ringtone, vibration and incoming-call notification.
+- Source change only; GitHub build and real two-device testing required.
