@@ -67,3 +67,10 @@ IMPORTANT:
 - Button label changed to HOLD TO RING.
 - Preserves the v3.21 working communication and call behaviour.
 - Source update only; build and two-device test required.
+
+
+## Version 3.23 Hold-to-ring release behaviour
+- RING starts when the user presses the RING button.
+- RING_STOP is sent when the user releases the button or touch is cancelled.
+- Receiver stops ringtone, vibration and ring notification on RING_STOP.
+- Source update only; build and two-device test required.

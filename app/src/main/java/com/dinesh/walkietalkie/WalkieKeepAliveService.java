@@ -19,7 +19,7 @@ public class WalkieKeepAliveService extends Service {
     private final java.util.concurrent.ExecutorService networkSendExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
     static final String UPDATE="com.dinesh.walkietalkie.LOCAL_UPDATE",GROUP="239.10.10.10";
     static final int PORT=47655,RATE=16000,FRAME=640,HEADER=33;
-    static final byte HEARTBEAT=1,AUDIO=2,RING=3,CALL=4,ACCEPT=5,REJECT=6,END=7,PTT_AUDIO=8;
+    static final byte HEARTBEAT=1,AUDIO=2,RING=3,CALL=4,ACCEPT=5,REJECT=6,END=7,PTT_AUDIO=8,RING_STOP=9;
     final UUID id=UUID.randomUUID();
     final Map<String,Long> seen=new ConcurrentHashMap<>();
     final Map<String,String> names=new ConcurrentHashMap<>();
@@ -58,7 +58,8 @@ public class WalkieKeepAliveService extends Service {
         else if("LEAVE".equals(a)){autoEnabled=false;unregisterWifiMonitor();leaveLan();stopForeground(true);stopSelf();}
         else if("PTT_START".equals(a)){ptt=true;startMicrophone();}
         else if("PTT_STOP".equals(a)){ptt=false;if(!callActive)stopMicrophone();}
-        else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){sendTarget(RING,target,new byte[0]);notifyStatus("Ringing selected staff member");}else emit("Not connected to Wi-Fi channel",false);}
+        else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){sendTarget(RING,target,new byte[0]);}else emit("Not connected to Wi-Fi channel",false);}
+        else if("RING_STOP".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null)sendTarget(RING_STOP,target,new byte[0]);}
         else if("CALL".equals(a)){callTarget(i.getStringExtra("target"),i.getStringExtra("targetName"));}
         else if("CALL_ACCEPT".equals(a)){acceptCall(i.getStringExtra("peer"));}
         else if("CALL_REJECT".equals(a)){String peer=i.getStringExtra("peer");cancelCallTimeout();stopLoudAlert();getSystemService(NotificationManager.class).cancel(43);sendTarget(REJECT,peer,new byte[0]);emitCall("Call declined",false);}
@@ -138,6 +139,7 @@ public class WalkieKeepAliveService extends Service {
         else if(!target.equals(id.toString())&&!target.equals("00000000-0000-0000-0000-000000000000"))continue;
         else if(type==AUDIO||type==PTT_AUDIO){if(type==PTT_AUDIO||callActive&&from.equals(peerId))play(p.getData(),off,len);}
         else if(type==RING){incomingRing(from);}
+        else if(type==RING_STOP){stopLoudAlert();getSystemService(NotificationManager.class).cancel(44);emit("Ring stopped",false);}
         else if(type==CALL){incomingCall(from);}
         else if(type==ACCEPT){if(from.equals(peerId)){cancelCallTimeout();getSystemService(NotificationManager.class).cancel(43);callActive=true;notifyStatus("Two-way call with "+peerName);emitCall("Connected to "+peerName,true);startMicrophone();}}
         else if(type==REJECT){if(from.equals(peerId)){cancelCallTimeout();peerId=null;peerName=null;emitCall("Call declined",false);}}
