@@ -38,7 +38,7 @@ public class MainActivity extends Activity {
             String st=i.getStringExtra("status");if(st!=null)statusLabel.setText(st);
             statusLabel.setTextColor(i.getBooleanExtra("ok",joined)?Color.rgb(15,130,80):Color.RED);
             countLabel.setText(i.getIntExtra("count",0)+" online");
-            joinButton.setText(joined?"LEAVE CHANNEL":"JOIN LOCAL WI-FI CHANNEL");
+            joinButton.setText("AUTO-CONNECT ENABLED");
             talkButton.setEnabled(joined);
             renderRows(i.getStringArrayListExtra("users"),i.getStringArrayListExtra("ids"),i.getStringArrayListExtra("online"));
             String call=i.getStringExtra("callStatus");if(call!=null)callLabel.setText(call);
@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         TextView title=txt("DINESH THAKUR\\nWALKIE TALKIE",24,Color.rgb(5,65,48));title.setTypeface(null,Typeface.BOLD);title.setPadding(0,dp(6),0,dp(4));root.addView(title);
         root.addView(txt("LOCAL WI-FI • JB HOSPITALITY",12,Color.DKGRAY));
         nameBox=new EditText(this);nameBox.setSingleLine(true);nameBox.setText(getPreferences(0).getString("name",""));nameBox.setHint("This device's staff name");nameBox.setPadding(dp(12),0,dp(12),0);nameBox.setBackground(shape(Color.WHITE,10));LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,dp(48));np.topMargin=dp(10);root.addView(nameBox,np);
-        joinButton=new Button(this);joinButton.setAllCaps(false);joinButton.setText("JOIN LOCAL WI-FI CHANNEL");LinearLayout.LayoutParams jp=new LinearLayout.LayoutParams(-1,dp(48));jp.topMargin=dp(7);root.addView(joinButton,jp);joinButton.setOnClickListener(v->{if(joined)command("LEAVE");else join();});
+        joinButton=new Button(this);joinButton.setAllCaps(false);joinButton.setText("ENABLE AUTO-CONNECT");LinearLayout.LayoutParams jp=new LinearLayout.LayoutParams(-1,dp(48));jp.topMargin=dp(7);root.addView(joinButton,jp);joinButton.setOnClickListener(v->{if(!joined)join();else Toast.makeText(this,"Auto-connect is active. The channel stays connected while Wi-Fi is available.",Toast.LENGTH_LONG).show();});
         networkLabel=txt("Wi-Fi: checking",12,Color.DKGRAY);networkLabel.setPadding(0,dp(7),0,dp(2));root.addView(networkLabel);
         statusLabel=txt("Not connected",12,Color.RED);root.addView(statusLabel);
         LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(dp(12),dp(10),dp(12),dp(10));card.setBackground(shape(Color.WHITE,12));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.topMargin=dp(9);root.addView(card,cp);
@@ -70,8 +70,9 @@ public class MainActivity extends Activity {
     }
 
     void refreshWifi(){ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);boolean wifi=false;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=true;break;}}networkLabel.setText(wifi?"Wi-Fi available • Local LAN":"Connect to restaurant Wi-Fi");networkLabel.setTextColor(wifi?Color.rgb(15,130,80):Color.RED);}
-    void join(){String n=nameBox.getText().toString().trim();if(n.isEmpty()){nameBox.setError("Enter a staff name");return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},11);return;}getPreferences(0).edit().putString("name",n).apply();Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("JOIN");i.putExtra("name",n);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);joined=true;statusLabel.setText("Starting local channel…");}
-    void command(String a){Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction(a);startService(i);if("LEAVE".equals(a)){joined=false;joinButton.setText("JOIN LOCAL WI-FI CHANNEL");talkButton.setEnabled(false);}}
+    void join(){String n=nameBox.getText().toString().trim();if(n.isEmpty()){nameBox.setError("Enter a staff name");return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},11);return;}getPreferences(0).edit().putString("name",n).apply();startAutoService(n);}
+    void startAutoService(String n){Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("AUTO_START");i.putExtra("name",n);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);joined=true;joinButton.setText("AUTO-CONNECT ENABLED");statusLabel.setText("Auto-connecting to local Wi-Fi…");}
+    void command(String a){Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction(a);startService(i);}
     void renderRows(ArrayList<String> ns,ArrayList<String> ids,ArrayList<String> states){
         userRows.removeAllViews();if(ns==null||ns.isEmpty()){userRows.addView(txt("No staff detected yet.",13,Color.GRAY));return;}
         for(int x=0;x<ns.size();x++){final String id=ids.get(x),name=ns.get(x);boolean on="1".equals(states.get(x));if("SELF".equals(id))continue;

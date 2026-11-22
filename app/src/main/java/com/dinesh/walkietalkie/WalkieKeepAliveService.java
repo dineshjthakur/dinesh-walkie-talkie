@@ -19,7 +19,7 @@ public class WalkieKeepAliveService extends Service {
     final UUID id=UUID.randomUUID();
     final Map<String,Long> seen=new ConcurrentHashMap<>();
     final Map<String,String> names=new ConcurrentHashMap<>();
-    volatile boolean running=false,ptt=false,callActive=false;
+    volatile boolean running=false,ptt=false,callActive=false;\n    volatile boolean autoEnabled=false;\n    ConnectivityManager.NetworkCallback wifiCallback;
     volatile String peerId=null,peerName=null;
     String myName="Staff";
     MulticastSocket socket;InetAddress group;
@@ -32,21 +32,43 @@ public class WalkieKeepAliveService extends Service {
     Notification makeNotification(String text){Intent open=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,1,open,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));return new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"jb_walkie_active":"").setSmallIcon(R.drawable.ic_walkie_notification).setContentTitle("JB HOSPITALITY Walkie Talkie").setContentText(text).setOngoing(true).setContentIntent(pi).build();}
     void notifyStatus(String t){if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager.class).notify(41,makeNotification(t));}
     @Override public int onStartCommand(Intent i,int flags,int startId){if(i==null)return START_STICKY;String a=i.getAction();
-        if("JOIN".equals(a)){myName=i.getStringExtra("name");if(myName==null||myName.trim().isEmpty())myName="Staff";startForeground(41,makeNotification("Joining local Wi-Fi"));joinLan();}
-        else if("LEAVE".equals(a)){leaveLan();stopForeground(true);stopSelf();}
+        if("AUTO_START".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");startForeground(41,makeNotification("Auto-connect enabled • waiting for Wi-Fi"));registerWifiMonitor();joinLan();}\n        else if("JOIN".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");if(myName==null||myName.trim().isEmpty())myName="Staff";startForeground(41,makeNotification("Joining local Wi-Fi"));joinLan();}
+        else if("LEAVE".equals(a)){autoEnabled=false;unregisterWifiMonitor();leaveLan();stopForeground(true);stopSelf();}
         else if("PTT_START".equals(a)){ptt=true;startMicrophone();}
         else if("PTT_STOP".equals(a)){ptt=false;if(!callActive)stopMicrophone();}
-        else if("RING".equals(a)){sendTarget(RING,i.getStringExtra("target"),new byte[0]);}
+        else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){sendTarget(RING,target,new byte[0]);notifyStatus("Ringing selected staff member");}else emit("Not connected to Wi-Fi channel",false);}
         else if("CALL".equals(a)){callTarget(i.getStringExtra("target"),i.getStringExtra("targetName"));}
         else if("CALL_ACCEPT".equals(a)){acceptCall(i.getStringExtra("peer"));}
         else if("CALL_REJECT".equals(a)){sendTarget(REJECT,i.getStringExtra("peer"),new byte[0]);}
         else if("CALL_END".equals(a)){endCall(true);}
         return START_STICKY;
     }
-    void joinLan(){if(running)return;try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network wifi=null;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}if(wifi==null){emit("Connect to restaurant Wi-Fi",false);stopSelf();return;}if(!cm.bindProcessToNetwork(wifi)){emit("Cannot bind Wi-Fi network",false);stopSelf();return;}
+    void joinLan(){if(running)return;try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network wifi=null;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}if(wifi==null){emit("Waiting for restaurant Wi-Fi…",false);notifyStatus("Auto-connect enabled • waiting for Wi-Fi");return;}if(!cm.bindProcessToNetwork(wifi)){emit("Cannot bind Wi-Fi network",false);return;}
         WifiManager wm=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);multicastLock=wm.createMulticastLock("JBWalkieMulticast");multicastLock.setReferenceCounted(false);multicastLock.acquire();wifiLock=wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,"JBWalkieWifi");wifiLock.acquire();PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);cpuLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"JBWalkieCpu");cpuLock.acquire();
         group=InetAddress.getByName(GROUP);socket=new MulticastSocket(null);socket.setReuseAddress(true);socket.bind(new InetSocketAddress(PORT));socket.setTimeToLive(1);socket.joinGroup(group);running=true;new Thread(this::receiveLoop,"LAN-RX").start();new Thread(this::heartbeatLoop,"LAN-Presence").start();emit("Connected • local Wi-Fi",true);notifyStatus("Connected • "+myName+" • background active");
     }catch(Exception e){emit("Wi-Fi error: "+e.getMessage(),false);leaveLan();stopSelf();}}
+    void registerWifiMonitor(){
+        try{
+            ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+            if(wifiCallback!=null)return;
+            wifiCallback=new ConnectivityManager.NetworkCallback(){
+                @Override public void onAvailable(Network n){
+                    NetworkCapabilities c=cm.getNetworkCapabilities(n);
+                    if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)&&autoEnabled&&!running){
+                        new Handler(Looper.getMainLooper()).postDelayed(()->{if(autoEnabled&&!running)joinLan();},1200);
+                    }
+                }
+                @Override public void onLost(Network n){
+                    if(running){leaveLan();emit("Wi-Fi lost • waiting to reconnect",false);notifyStatus("Waiting for Wi-Fi");}
+                }
+            };
+            cm.registerNetworkCallback(new NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),wifiCallback);
+        }catch(Exception ignored){}
+    }
+    void unregisterWifiMonitor(){
+        try{if(wifiCallback!=null){((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(wifiCallback);}}catch(Exception ignored){}
+        wifiCallback=null;
+    }
     byte[] uuidBytes(String s){try{UUID u=UUID.fromString(s);return ByteBuffer.allocate(16).putLong(u.getMostSignificantBits()).putLong(u.getLeastSignificantBits()).array();}catch(Exception e){return new byte[16];}}
     String uuidString(byte[] b,int o){ByteBuffer x=ByteBuffer.wrap(b,o,16);return new UUID(x.getLong(),x.getLong()).toString();}
     void sendPacket(byte type,String target,byte[] data){try{byte[] p=new byte[HEADER+data.length];p[0]=type;System.arraycopy(uuidBytes(id.toString()),0,p,1,16);System.arraycopy(uuidBytes(target),0,p,17,16);System.arraycopy(data,0,p,HEADER,data.length);socket.send(new DatagramPacket(p,p.length,group,PORT));}catch(Exception ignored){}}
@@ -65,7 +87,7 @@ public class WalkieKeepAliveService extends Service {
     void publishUsers(){ArrayList<String> ns=new ArrayList<>(),ids=new ArrayList<>(),st=new ArrayList<>();ns.add(myName);ids.add("SELF");st.add("1");long now=System.currentTimeMillis();for(String k:seen.keySet()){ns.add(names.getOrDefault(k,"Staff"));ids.add(k);st.add(now-seen.get(k)<=9000?"1":"0");}Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putStringArrayListExtra("users",ns);x.putStringArrayListExtra("ids",ids);x.putStringArrayListExtra("online",st);x.putExtra("count",(int)st.stream().filter("1"::equals).count());x.putExtra("joined",true);x.putExtra("ok",true);x.putExtra("status","Connected • local Wi-Fi");x.putExtra("callActive",callActive);sendBroadcast(x);}
     void emit(String s,boolean ok){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("status",s);x.putExtra("ok",ok);x.putExtra("joined",ok);sendBroadcast(x);}
     void emitCall(String s,boolean active){Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("callStatus",s);x.putExtra("callActive",active);x.putExtra("joined",running);x.putExtra("ok",running);sendBroadcast(x);}
-    void callTarget(String target,String name){if(!running||target==null)return;if(callActive){emitCall("Already in a call",true);return;}peerId=target;peerName=name;sendTarget(CALL,target,new byte[0]);emitCall("Calling "+name+"…",false);notifyStatus("Calling "+name);}
+    void callTarget(String target,String name){if(!running||target==null){emitCall("Not connected to local Wi-Fi",false);return;}if(callActive){emitCall("Already in a call",true);return;}peerId=target;peerName=name;sendTarget(CALL,target,new byte[0]);emitCall("Calling "+name+"…",false);notifyStatus("Calling "+name);}
     void incomingCall(String from){
         String caller=names.getOrDefault(from,"Staff");
         Intent x=new Intent(UPDATE);x.setPackage(getPackageName());x.putExtra("incomingCaller",caller);x.putExtra("incomingId",from);x.putExtra("joined",true);x.putExtra("ok",true);sendBroadcast(x);
@@ -100,6 +122,6 @@ public class WalkieKeepAliveService extends Service {
     void endCall(boolean send){String old=peerId;if(send&&old!=null)sendTarget(END,old,new byte[0]);callActive=false;peerId=null;peerName=null;if(!ptt)stopMicrophone();emitCall("Call ended",false);notifyStatus("Connected • local Wi-Fi");}
     void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(group);socket.close();}}catch(Exception ignored){}socket=null;try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
     @Override public void onTaskRemoved(Intent i){super.onTaskRemoved(i);}
-    @Override public void onDestroy(){leaveLan();if(tone!=null)tone.release();super.onDestroy();}
+    @Override public void onDestroy(){autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }
