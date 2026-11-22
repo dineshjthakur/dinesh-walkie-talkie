@@ -78,7 +78,16 @@ public class MainActivity extends Activity {
         for(int x=0;x<ns.size();x++){final String id=ids.get(x),name=ns.get(x);boolean on="1".equals(states.get(x));if("SELF".equals(id))continue;
             LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(4),dp(4),dp(4),dp(4));
             TextView who=txt((on?"● ":"○ ")+name+"  "+(on?"ONLINE":"OFFLINE"),13,on?Color.rgb(15,130,80):Color.GRAY);row.addView(who,new LinearLayout.LayoutParams(0,dp(42),1));
-            Button ring=new Button(this);ring.setText("RING");ring.setAllCaps(false);ring.setTextSize(10);ring.setEnabled(on);ring.setOnClickListener(v->{Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("RING");i.putExtra("target",id);startService(i);});row.addView(ring,new LinearLayout.LayoutParams(dp(72),dp(46)));
+            Button ring=new Button(this);ring.setText("RING");ring.setAllCaps(false);ring.setTextSize(10);ring.setEnabled(on);ring.setText("HOLD TO RING");
+            ring.setOnClickListener(v->Toast.makeText(this,"Press and hold to ring "+name,Toast.LENGTH_SHORT).show());
+            ring.setOnLongClickListener(v->{
+                Intent i=new Intent(this,WalkieKeepAliveService.class);
+                i.setAction("RING");
+                i.putExtra("target",id);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+                Toast.makeText(this,"Ringing "+name,Toast.LENGTH_SHORT).show();
+                return true;
+            });row.addView(ring,new LinearLayout.LayoutParams(dp(72),dp(46)));
             Button call=new Button(this);call.setText("CALL");call.setAllCaps(false);call.setTextSize(10);call.setEnabled(on);call.setOnClickListener(v->{Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("CALL");i.putExtra("target",id);i.putExtra("targetName",name);startService(i);});row.addView(call,new LinearLayout.LayoutParams(dp(72),dp(46)));
             userRows.addView(row);
         }

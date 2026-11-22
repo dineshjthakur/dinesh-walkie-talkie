@@ -59,3 +59,11 @@ IMPORTANT:
 - Incoming call notification is ongoing, public, expanded with BigTextStyle and has a prominent ACCEPT CALL action plus DECLINE.
 - Answer/decline cancels timeout, ringtone, vibration and incoming-call notification.
 - Source change only; GitHub build and real two-device testing required.
+
+
+## Version 3.22 Press-and-hold RING
+- Staff RING control now sends a ring alert only after a long press.
+- A normal tap displays an instruction toast and does not send a ring.
+- Button label changed to HOLD TO RING.
+- Preserves the v3.21 working communication and call behaviour.
+- Source update only; build and two-device test required.
