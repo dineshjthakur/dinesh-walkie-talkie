@@ -94,3 +94,10 @@ IMPORTANT:
 - The app itself cannot change router configuration. Configure the routers through their own administration pages.
 - Keeps the existing local Wi-Fi multicast communication protocol and existing PTT/RING/CALL implementation. For this to cross all three routers, they must bridge one LAN and pass multicast; if a router/switch filters multicast, additional network configuration or a relay will be needed.
 - Source update only; GitHub build and testing across all three access points required.
+
+
+## Version 3.26 build compatibility fix
+- Fixes Java compilation error: RouteInfo.isDefault() is not available in the Android API compile target.
+- Detects the default IPv4/IPv6 route by checking destination prefix length == 0 instead.
+- No changes to communication, RING, CALL, or PTT behaviour.
+- Source update only; run GitHub Actions to verify compilation.

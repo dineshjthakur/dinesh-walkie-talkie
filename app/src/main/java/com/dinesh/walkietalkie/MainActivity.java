@@ -83,7 +83,7 @@ public class MainActivity extends Activity {
             String iface=lp!=null?lp.getInterfaceName():"unknown";
             String addresses=lp!=null?lp.getLinkAddresses().toString():"unknown";
             String gateway="unknown";
-            if(lp!=null)for(RouteInfo r:lp.getRoutes())if(r.isDefault()&&r.getGateway()!=null){gateway=r.getGateway().getHostAddress();break;}
+            if(lp!=null)for(RouteInfo r:lp.getRoutes())if(r.getDestination()!=null&&r.getDestination().getPrefixLength()==0&&r.getGateway()!=null){gateway=r.getGateway().getHostAddress();break;}
             networkDetails.setText("Interface: "+iface+"   Gateway: "+gateway+"\\nIP: "+addresses);
         }else networkDetails.setText("Network details unavailable");
     }
