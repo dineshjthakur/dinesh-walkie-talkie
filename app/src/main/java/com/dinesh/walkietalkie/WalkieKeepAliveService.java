@@ -82,7 +82,7 @@ public class WalkieKeepAliveService extends Service {
         socket.bind(new InetSocketAddress(PORT));
         socket.setTimeToLive(1);
         socket.joinGroup(new InetSocketAddress(group,PORT),wifiInterface);
-        running=true;new Thread(this::receiveLoop,"LAN-RX").start();new Thread(this::heartbeatLoop,"LAN-Presence").start();emit("Connected • local Wi-Fi",true);notifyStatus("Connected • "+myName+" • background active");
+        running=true;sendHeartbeatImmediately();new Thread(this::receiveLoop,"LAN-RX").start();new Thread(this::heartbeatLoop,"LAN-Presence").start();emit("Connected • local Wi-Fi",true);notifyStatus("Connected • "+myName+" • background active");
     }catch(Exception e){emit("Wi-Fi error: "+e.getMessage(),false);leaveLan();stopSelf();}}
     void registerWifiMonitor(){
         try{
@@ -108,6 +108,13 @@ public class WalkieKeepAliveService extends Service {
     }
     byte[] uuidBytes(String s){try{UUID u=UUID.fromString(s);return ByteBuffer.allocate(16).putLong(u.getMostSignificantBits()).putLong(u.getLeastSignificantBits()).array();}catch(Exception e){return new byte[16];}}
     String uuidString(byte[] b,int o){ByteBuffer x=ByteBuffer.wrap(b,o,16);return new UUID(x.getLong(),x.getLong()).toString();}
+
+    void sendHeartbeatImmediately(){
+        try{
+            String localName=getSharedPreferences("walkie",MODE_PRIVATE).getString("name","Staff");
+            sendPacket(HEARTBEAT,null,localName.getBytes(StandardCharsets.UTF_8));
+        }catch(Exception e){emit("Initial discovery error: "+e.getClass().getSimpleName(),false);}
+    }
     void sendPacket(byte type,String target,byte[] data){
         final byte[] payload = data == null ? new byte[0] : Arrays.copyOf(data, data.length);
         final String targetId = target;

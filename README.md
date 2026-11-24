@@ -74,3 +74,13 @@ IMPORTANT:
 - RING_STOP is sent when the user releases the button or touch is cancelled.
 - Receiver stops ringtone, vibration and ring notification on RING_STOP.
 - Source update only; build and two-device test required.
+
+
+## Version 3.24 Always connected and faster discovery
+- Hides the manual ENABLE AUTO-CONNECT / channel button from the main screen.
+- Starts the walkie-talkie service automatically when the app opens.
+- Sends an immediate presence heartbeat after LAN join.
+- Reduces heartbeat interval to one second and stale-peer timeout to six seconds.
+- Keeps local Wi-Fi-only operation; devices must still be connected to the same reachable LAN.
+- Android may still stop background services after Force Stop, reboot, or manufacturer battery restrictions.
+- Source update only; build and two-device verification required.

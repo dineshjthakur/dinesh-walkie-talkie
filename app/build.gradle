@@ -7,8 +7,8 @@ android {
         applicationId 'com.dinesh.walkietalkie'
         minSdk 23
         targetSdk 35
-        versionCode 27
-        versionName '3.23'
+        versionCode 28
+        versionName '3.24'
     }
 }
 
