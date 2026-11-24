@@ -19,7 +19,7 @@ public class MainActivity extends Activity {
     static final String UPDATE="com.dinesh.walkietalkie.LOCAL_UPDATE";
     LinearLayout userRows;
     EditText nameBox;
-    TextView networkLabel,statusLabel,countLabel,callLabel;
+    TextView networkLabel,statusLabel,countLabel,callLabel,networkDetails;
     Button joinButton,talkButton,endCallButton;
     boolean joined=false,receiverRegistered=false,dialogShowing=false;
     BroadcastReceiver updates;
@@ -58,6 +58,8 @@ public class MainActivity extends Activity {
         nameBox=new EditText(this);nameBox.setSingleLine(true);nameBox.setText(getPreferences(0).getString("name",""));nameBox.setHint("This device's staff name");nameBox.setPadding(dp(12),0,dp(12),0);nameBox.setBackground(shape(Color.WHITE,10));LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,dp(48));np.topMargin=dp(10);root.addView(nameBox,np);
         joinButton=new Button(this);joinButton.setAllCaps(false);joinButton.setText("CONNECTED AUTOMATICALLY");LinearLayout.LayoutParams jp=new LinearLayout.LayoutParams(-1,dp(48));jp.topMargin=dp(7);root.addView(joinButton,jp);joinButton.setOnClickListener(v->{if(!joined)join();else Toast.makeText(this,"Auto-connect is active. The channel stays connected while Wi-Fi is available.",Toast.LENGTH_LONG).show();});
         networkLabel=txt("Wi-Fi: checking",12,Color.DKGRAY);networkLabel.setPadding(0,dp(7),0,dp(2));root.addView(networkLabel);
+        networkDetails=txt("Network details: checking…",11,Color.DKGRAY);networkDetails.setPadding(0,dp(2),0,dp(2));root.addView(networkDetails);
+        Button setup=new Button(this);setup.setText("3-ROUTER NETWORK SETUP");setup.setAllCaps(false);setup.setOnClickListener(v->showRouterGuide());root.addView(setup,new LinearLayout.LayoutParams(-1,dp(42)));
         statusLabel=txt("Not connected",12,Color.RED);root.addView(statusLabel);
         LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(dp(12),dp(10),dp(12),dp(10));card.setBackground(shape(Color.WHITE,12));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.topMargin=dp(9);root.addView(card,cp);
         callLabel=txt("Ready to join",15,Color.rgb(20,55,42));callLabel.setTypeface(null,Typeface.BOLD);card.addView(callLabel);
@@ -69,7 +71,31 @@ public class MainActivity extends Activity {
         TextView note=txt("CALL = full two-way conversation. RING = buzzer alert. All devices must use the same Wi-Fi.",10,Color.GRAY);note.setGravity(Gravity.CENTER);note.setPadding(0,dp(8),0,0);root.addView(note);
     }
 
-    void refreshWifi(){ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);boolean wifi=false;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=true;break;}}networkLabel.setText(wifi?"Wi-Fi available • Local LAN":"Connect to restaurant Wi-Fi");networkLabel.setTextColor(wifi?Color.rgb(15,130,80):Color.RED);}
+    void refreshWifi(){
+        ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+        Network wifi=null;
+        for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}
+        boolean connected=wifi!=null;
+        networkLabel.setText(connected?"Wi-Fi available • Local LAN":"Connect to restaurant Wi-Fi");
+        networkLabel.setTextColor(connected?Color.rgb(15,130,80):Color.RED);
+        if(connected){
+            LinkProperties lp=cm.getLinkProperties(wifi);
+            String iface=lp!=null?lp.getInterfaceName():"unknown";
+            String addresses=lp!=null?lp.getLinkAddresses().toString():"unknown";
+            String gateway="unknown";
+            if(lp!=null)for(RouteInfo r:lp.getRoutes())if(r.isDefault()&&r.getGateway()!=null){gateway=r.getGateway().getHostAddress();break;}
+            networkDetails.setText("Interface: "+iface+"   Gateway: "+gateway+"\\nIP: "+addresses);
+        }else networkDetails.setText("Network details unavailable");
+    }
+    void showRouterGuide(){
+        String guide="JB HOSPITALITY — THREE ROUTER SETUP\\n\\n"+
+            "MAIN ROUTER\\n• Keep Router mode and DHCP ON.\\n• Connect it to the main switch using a LAN port.\\n\\n"+
+            "ROUTERS 2 AND 3\\n• Select Access Point (AP) mode.\\n• Disable DHCP on both (AP mode usually does this automatically).\\n• Connect each router's LAN port to the switch. Do not use WAN ports in this LAN-to-LAN AP setup.\\n"+
+            "• Give each router a unique management IP in the main router's subnet.\\n\\n"+
+            "ALL THREE\\n• Same IP subnet and same Wi-Fi name/password (recommended).\\n• Disable AP/client isolation and guest isolation.\\n• Do not create separate NAT networks.\\n\\n"+
+            "After setup, connect both phones to Wi-Fi and compare their IP addresses. They should be in the same subnet. The app uses local-LAN discovery; this setup allows discovery to cross the access points without cloud service or internet.";
+        new AlertDialog.Builder(this).setTitle("Router and switch configuration").setMessage(guide).setPositiveButton("OK",null).show();
+    }
     void join(){String n=nameBox.getText().toString().trim();if(n.isEmpty()){nameBox.setError("Enter a staff name");return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},11);return;}getPreferences(0).edit().putString("name",n).apply();startAutoService(n);}
     void startAutoService(String n){Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("AUTO_START");i.putExtra("name",n);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);joined=true;joinButton.setText("CONNECTED AUTOMATICALLY");statusLabel.setText("Auto-connecting to local Wi-Fi…");}
     void command(String a){Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction(a);startService(i);}

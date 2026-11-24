@@ -84,3 +84,13 @@ IMPORTANT:
 - Keeps local Wi-Fi-only operation; devices must still be connected to the same reachable LAN.
 - Android may still stop background services after Force Stop, reboot, or manufacturer battery restrictions.
 - Source update only; build and two-device verification required.
+
+
+## Version 3.25 — Three-router LAN / Access Point setup
+- Adds an in-app router setup guide for a single shared LAN across three routers and switches.
+- Adds Wi-Fi interface, IP address and default gateway diagnostics to help verify that phones are on the same subnet.
+- Recommended topology: one main router with DHCP enabled; routers 2 and 3 in Access Point mode with DHCP disabled; connect APs to switches through LAN ports; do not use WAN ports for the LAN-to-LAN AP configuration.
+- Disable client/AP isolation and guest isolation. Use unique management IPs for APs in the main subnet.
+- The app itself cannot change router configuration. Configure the routers through their own administration pages.
+- Keeps the existing local Wi-Fi multicast communication protocol and existing PTT/RING/CALL implementation. For this to cross all three routers, they must bridge one LAN and pass multicast; if a router/switch filters multicast, additional network configuration or a relay will be needed.
+- Source update only; GitHub build and testing across all three access points required.
