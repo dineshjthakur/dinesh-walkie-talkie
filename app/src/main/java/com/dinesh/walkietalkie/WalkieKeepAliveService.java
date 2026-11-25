@@ -131,7 +131,7 @@ public class WalkieKeepAliveService extends Service {
                 System.arraycopy(name,0,packet,HEADER,name.length);
                 boolean sent=false;
                 for(InterfaceAddress ia:wifiInterface.getInterfaceAddresses()){
-                    InetAddress broadcast=ia.getBroadcastAddress();
+                    InetAddress broadcast=ia.getBroadcast();
                     if(broadcast!=null){
                         currentSocket.send(new DatagramPacket(packet,packet.length,broadcast,PORT));
                         sent=true;

@@ -110,3 +110,10 @@ IMPORTANT:
 - Adds a NETWORK SETUP button for the three-router LAN/AP guide.
 - Scanning cannot cross routed/NAT subnets or router broadcast isolation. For this to work across two/three routers, configure secondary routers as APs, LAN-to-LAN, DHCP disabled on secondary routers, and disable client isolation.
 - Source update only; build and test on all devices required.
+
+
+## Version 3.28 — Scan broadcast API compilation fix
+- Fixes the Android Java compilation error in `WalkieKeepAliveService.java` by calling `InterfaceAddress.getBroadcast()` instead of the non-existent `getBroadcastAddress()` method.
+- Retains the v3.27 scan-devices, local Wi-Fi discovery, PTT, RING, CALL, and network setup behaviour.
+- Increments Android versionName to 3.28 and versionCode to 32.
+- Source update only; run the included GitHub Actions workflow and test on multiple devices.
