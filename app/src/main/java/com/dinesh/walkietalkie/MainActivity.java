@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         endCallButton=new Button(this);endCallButton.setText("END TWO-WAY CALL");endCallButton.setAllCaps(false);endCallButton.setVisibility(android.view.View.GONE);endCallButton.setOnClickListener(v->command("CALL_END"));card.addView(endCallButton);
         LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(0,dp(12),0,dp(5));TextView h=txt("STAFF • ONLINE / OFFLINE",15,Color.rgb(4,95,67));h.setTypeface(null,Typeface.BOLD);head.addView(h,new LinearLayout.LayoutParams(0,-2,1));countLabel=txt("0 online",12,Color.DKGRAY);head.addView(countLabel);root.addView(head);
         ScrollView scroll=new ScrollView(this);userRows=new LinearLayout(this);userRows.setOrientation(1);userRows.setPadding(dp(6),dp(5),dp(6),dp(5));userRows.setBackground(shape(Color.WHITE,9));scroll.addView(userRows);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        TextView note=txt("CALL = full two-way conversation. RING = buzzer alert. All devices must use the same Wi-Fi.",10,Color.GRAY);note.setGravity(Gravity.CENTER);note.setPadding(0,dp(8),0,0);root.addView(note);
+        TextView note=txt("CALL = full two-way conversation. Hold RING to alert for up to 15 seconds; release to stop.",10,Color.GRAY);note.setGravity(Gravity.CENTER);note.setPadding(0,dp(8),0,0);root.addView(note);
     }
 
     void refreshWifi(){
@@ -107,26 +107,26 @@ public class MainActivity extends Activity {
         for(int x=0;x<ns.size();x++){final String id=ids.get(x),name=ns.get(x);boolean on="1".equals(states.get(x));if("SELF".equals(id))continue;
             LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(4),dp(4),dp(4),dp(4));
             TextView who=txt((on?"● ":"○ ")+name+"  "+(on?"ONLINE":"OFFLINE"),13,on?Color.rgb(15,130,80):Color.GRAY);row.addView(who,new LinearLayout.LayoutParams(0,dp(42),1));
-            Button ring=new Button(this);ring.setText("RING");ring.setAllCaps(false);ring.setTextSize(10);ring.setEnabled(on);ring.setText("HOLD TO RING");
+            Button ring=new Button(this);ring.setText("RING");ring.setAllCaps(false);ring.setTextSize(13);ring.setTypeface(null,Typeface.BOLD);ring.setAllCaps(false);ring.setEnabled(on);ring.setText("HOLD TO RING\n15 SEC MAX");ring.setMinHeight(dp(68));ring.setPadding(dp(4),dp(4),dp(4),dp(4));ring.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(190,75,45)));
             ring.setOnTouchListener((v,e)->{
                 if(!on)return false;
                 if(e.getAction()==MotionEvent.ACTION_DOWN){
                     Intent i=new Intent(this,WalkieKeepAliveService.class);
                     i.setAction("RING");i.putExtra("target",id);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
-                    ring.setText("RINGING…");
+                    ring.setText("RINGING…\nRELEASE TO STOP");
                     return true;
                 }
                 if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){
                     Intent i=new Intent(this,WalkieKeepAliveService.class);
                     i.setAction("RING_STOP");i.putExtra("target",id);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
-                    ring.setText("HOLD TO RING");
+                    ring.setText("HOLD TO RING\n15 SEC MAX");
                     return true;
                 }
                 return true;
-            });row.addView(ring,new LinearLayout.LayoutParams(dp(72),dp(46)));
-            Button call=new Button(this);call.setText("CALL");call.setAllCaps(false);call.setTextSize(10);call.setEnabled(on);call.setOnClickListener(v->{Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("CALL");i.putExtra("target",id);i.putExtra("targetName",name);startService(i);});row.addView(call,new LinearLayout.LayoutParams(dp(72),dp(46)));
+            });row.addView(ring,new LinearLayout.LayoutParams(dp(112),dp(68)));
+            Button call=new Button(this);call.setText("CALL");call.setAllCaps(false);call.setTextSize(15);call.setTypeface(null,Typeface.BOLD);call.setAllCaps(false);call.setEnabled(on);call.setMinHeight(dp(68));call.setPadding(dp(4),dp(4),dp(4),dp(4));call.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(20,115,175)));call.setOnClickListener(v->{Intent i=new Intent(this,WalkieKeepAliveService.class);i.setAction("CALL");i.putExtra("target",id);i.putExtra("targetName",name);startService(i);});row.addView(call,new LinearLayout.LayoutParams(dp(96),dp(68)));
             userRows.addView(row);
         }
     }

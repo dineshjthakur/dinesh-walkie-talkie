@@ -16,10 +16,11 @@ public class WalkieKeepAliveService extends Service {
     private final Handler callTimeoutHandler = new Handler(Looper.getMainLooper());
     private Runnable callTimeoutRunnable;
     private String pendingCallPeer;
+    private final Map<String,Runnable> ringAutoStops = new ConcurrentHashMap<>();
     private final java.util.concurrent.ExecutorService networkSendExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
     static final String UPDATE="com.dinesh.walkietalkie.LOCAL_UPDATE",GROUP="239.10.10.10";
     static final int PORT=47655,RATE=16000,FRAME=640,HEADER=33;
-    static final byte HEARTBEAT=1,AUDIO=2,RING=3,CALL=4,ACCEPT=5,REJECT=6,END=7,PTT_AUDIO=8,RING_STOP=9;
+    static final byte HEARTBEAT=1,AUDIO=2,RING=3,CALL=4,ACCEPT=5,REJECT=6,END=7,PTT_AUDIO=8,RING_STOP=9,DISCOVERY=10;
     final UUID id=UUID.randomUUID();
     final Map<String,Long> seen=new ConcurrentHashMap<>();
     final Map<String,String> names=new ConcurrentHashMap<>();
@@ -59,14 +60,16 @@ public class WalkieKeepAliveService extends Service {
         else if("SCAN".equals(a)){if(running){sendHeartbeatImmediately();sendScanBroadcast();publishUsers();emit("Scanning local network for staff devices…",true);}else emit("Waiting for Wi-Fi connection before scanning",false);}
         else if("PTT_START".equals(a)){ptt=true;startMicrophone();}
         else if("PTT_STOP".equals(a)){ptt=false;if(!callActive)stopMicrophone();}
-        else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){sendTarget(RING,target,new byte[0]);}else emit("Not connected to Wi-Fi channel",false);}
-        else if("RING_STOP".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null)sendTarget(RING_STOP,target,new byte[0]);}
+        else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){cancelRingAutoStop(target);sendTarget(RING,target,new byte[0]);Runnable stop=()->{sendTarget(RING_STOP,target,new byte[0]);ringAutoStops.remove(target);};ringAutoStops.put(target,stop);callTimeoutHandler.postDelayed(stop,15000);}else emit("Not connected to Wi-Fi channel",false);}
+        else if("RING_STOP".equals(a)){String target=i.getStringExtra("target");if(target!=null){cancelRingAutoStop(target);if(running)sendTarget(RING_STOP,target,new byte[0]);}}
         else if("CALL".equals(a)){callTarget(i.getStringExtra("target"),i.getStringExtra("targetName"));}
         else if("CALL_ACCEPT".equals(a)){acceptCall(i.getStringExtra("peer"));}
         else if("CALL_REJECT".equals(a)){String peer=i.getStringExtra("peer");cancelCallTimeout();stopLoudAlert();getSystemService(NotificationManager.class).cancel(43);sendTarget(REJECT,peer,new byte[0]);emitCall("Call declined",false);}
         else if("CALL_END".equals(a)){endCall(true);}
         return START_STICKY;
     }
+
+    void cancelRingAutoStop(String target){Runnable old=ringAutoStops.remove(target);if(old!=null)callTimeoutHandler.removeCallbacks(old);}
     void joinLan(){if(running)return;try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network wifi=null;for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){wifi=n;break;}}if(wifi==null){emit("Waiting for restaurant Wi-Fi…",false);notifyStatus("Auto-connect enabled • waiting for Wi-Fi");return;}
         wifiNetwork=wifi;
         LinkProperties lp=cm.getLinkProperties(wifi);
@@ -124,22 +127,46 @@ public class WalkieKeepAliveService extends Service {
                 currentSocket.setBroadcast(true);
                 byte[] name=myName.getBytes(StandardCharsets.UTF_8);
                 if(name.length>48)name=Arrays.copyOf(name,48);
-                byte[] packet=new byte[HEADER+name.length];
-                packet[0]=HEARTBEAT;
-                System.arraycopy(uuidBytes(id.toString()),0,packet,1,16);
-                System.arraycopy(uuidBytes(null),0,packet,17,16);
-                System.arraycopy(name,0,packet,HEADER,name.length);
-                boolean sent=false;
+                byte[] packet=makePacket(DISCOVERY,name);
+                // Mode A: discover peers on the currently bridged LAN.
                 for(InterfaceAddress ia:wifiInterface.getInterfaceAddresses()){
                     InetAddress broadcast=ia.getBroadcast();
-                    if(broadcast!=null){
-                        currentSocket.send(new DatagramPacket(packet,packet.length,broadcast,PORT));
-                        sent=true;
+                    if(broadcast!=null)currentSocket.send(new DatagramPacket(packet,packet.length,broadcast,PORT));
+                }
+                // Mode B: probe both requested /24 networks. Routed access between
+                // these subnets must be enabled on the routers; UDP broadcasts do not route.
+                String[] prefixes={"192.168.1.","192.168.0."};
+                for(String prefix:prefixes){
+                    for(int host=1;host<=254;host++){
+                        InetAddress address=InetAddress.getByName(prefix+host);
+                        if(address.equals(getLocalWifiAddress()))continue;
+                        currentSocket.send(new DatagramPacket(packet,packet.length,address,PORT));
                     }
                 }
-                if(!sent)emit("Subnet scan unavailable; using local multicast discovery",false);
+                emit("Scanning bridged LAN and 192.168.1.x / 192.168.0.x networks…",true);
             }catch(Exception e){emit("Device scan error: "+e.getClass().getSimpleName(),false);}
         });
+    }
+    InetAddress getLocalWifiAddress(){
+        try{for(InterfaceAddress ia:wifiInterface.getInterfaceAddresses())if(ia.getAddress() instanceof Inet4Address)return ia.getAddress();}catch(Exception ignored){}
+        return null;
+    }
+    byte[] makePacket(byte type,byte[] payload){
+        byte[] p=new byte[HEADER+payload.length];p[0]=type;
+        System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
+        System.arraycopy(uuidBytes(null),0,p,17,16);
+        System.arraycopy(payload,0,p,HEADER,payload.length);return p;
+    }
+    void sendUnicast(byte type,String target,byte[] payload){
+        try{
+            InetAddress address=target==null?null:peerAddresses.get(target);
+            if(address==null||socket==null||socket.isClosed())return;
+            byte[] p=new byte[HEADER+payload.length];p[0]=type;
+            System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
+            System.arraycopy(uuidBytes(target),0,p,17,16);
+            System.arraycopy(payload,0,p,HEADER,payload.length);
+            socket.send(new DatagramPacket(p,p.length,address,PORT));
+        }catch(Exception e){emit("Direct network send error: "+e.getClass().getSimpleName(),false);}
     }
     void sendPacket(byte type,String target,byte[] data){
         final byte[] payload = data == null ? new byte[0] : Arrays.copyOf(data, data.length);
@@ -149,12 +176,15 @@ public class WalkieKeepAliveService extends Service {
                 MulticastSocket currentSocket = socket;
                 InetAddress currentGroup = group;
                 if(currentSocket==null||currentSocket.isClosed()||currentGroup==null)return;
-                byte[] p=new byte[HEADER+payload.length];
-                p[0]=type;
-                System.arraycopy(uuidBytes(id.toString()),0,p,1,16);
-                System.arraycopy(uuidBytes(targetId),0,p,17,16);
-                System.arraycopy(payload,0,p,HEADER,payload.length);
-                currentSocket.send(new DatagramPacket(p,p.length,currentGroup,PORT));
+                if(targetId!=null){
+                    sendUnicast(type,targetId,payload);
+                }else if(type==PTT_AUDIO){
+                    // Send group voice as routed unicast to each discovered staff device.
+                    for(String peer:new ArrayList<>(peerAddresses.keySet()))sendUnicast(PTT_AUDIO,peer,payload);
+                }else{
+                    byte[] p=makePacket(type,payload);
+                    currentSocket.send(new DatagramPacket(p,p.length,currentGroup,PORT));
+                }
             }catch(Exception e){
                 emit("Network send error: "+e.getClass().getSimpleName(),false);
             }
@@ -163,7 +193,18 @@ public class WalkieKeepAliveService extends Service {
     void sendTarget(byte type,String target,byte[] data){if(target!=null)sendPacket(type,target,data);}
     void heartbeatLoop(){while(running){try{byte[] n=myName.getBytes(StandardCharsets.UTF_8);if(n.length>48)n=Arrays.copyOf(n,48);sendPacket(HEARTBEAT,null,n);long now=System.currentTimeMillis();for(String k:new ArrayList<>(seen.keySet()))if(now-seen.get(k)>45000){seen.remove(k);names.remove(k);peerAddresses.remove(k);}publishUsers();Thread.sleep(2500);}catch(InterruptedException e){return;}}}
     void receiveLoop(){byte[] buf=new byte[1500];while(running){try{DatagramPacket p=new DatagramPacket(buf,buf.length);socket.receive(p);if(p.getLength()<HEADER)continue;byte type=p.getData()[p.getOffset()];String from=uuidString(p.getData(),p.getOffset()+1),target=uuidString(p.getData(),p.getOffset()+17);if(from.equals(id.toString()))continue;int len=p.getLength()-HEADER;int off=p.getOffset()+HEADER;
-        if(type==HEARTBEAT){
+        if(type==DISCOVERY){
+            seen.put(from,System.currentTimeMillis());
+            names.put(from,new String(p.getData(),off,len,StandardCharsets.UTF_8));
+            peerAddresses.put(from,p.getAddress());
+            byte[] response=myName.getBytes(StandardCharsets.UTF_8);if(response.length>48)response=Arrays.copyOf(response,48);
+            byte[] reply=new byte[HEADER+response.length];reply[0]=HEARTBEAT;
+            System.arraycopy(uuidBytes(id.toString()),0,reply,1,16);
+            System.arraycopy(uuidBytes(null),0,reply,17,16);
+            System.arraycopy(response,0,reply,HEADER,response.length);
+            socket.send(new DatagramPacket(reply,reply.length,p.getAddress(),PORT));
+        }
+        else if(type==HEARTBEAT){
             seen.put(from,System.currentTimeMillis());
             names.put(from,new String(p.getData(),off,len,StandardCharsets.UTF_8));
             peerAddresses.put(from,p.getAddress());
@@ -273,6 +314,6 @@ public class WalkieKeepAliveService extends Service {
     void endCall(boolean send){cancelCallTimeout();stopLoudAlert();getSystemService(NotificationManager.class).cancel(43);String old=peerId;if(send&&old!=null)sendTarget(END,old,new byte[0]);callActive=false;peerId=null;peerName=null;if(!ptt)stopMicrophone();emitCall("Call ended",false);notifyStatus("Connected • local Wi-Fi");}
     void leaveLan(){running=false;ptt=false;endCall(false);stopMicrophone();try{if(socket!=null){socket.leaveGroup(new InetSocketAddress(group,PORT),wifiInterface);socket.close();}}catch(Exception ignored){}socket=null;wifiNetwork=null;wifiInterface=null;peerAddresses.clear();try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(Exception ignored){}try{if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();}catch(Exception ignored){}try{if(player!=null){player.stop();player.release();}}catch(Exception ignored){}player=null;try{((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).bindProcessToNetwork(null);}catch(Exception ignored){}}
     @Override public void onTaskRemoved(Intent i){super.onTaskRemoved(i);}
-    @Override public void onDestroy(){cancelCallTimeout();stopLoudAlert();networkSendExecutor.shutdownNow();autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
+    @Override public void onDestroy(){cancelCallTimeout();for(String target:new ArrayList<>(ringAutoStops.keySet()))cancelRingAutoStop(target);stopLoudAlert();networkSendExecutor.shutdownNow();autoEnabled=false;unregisterWifiMonitor();leaveLan();if(tone!=null)tone.release();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }

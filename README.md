@@ -117,3 +117,21 @@ IMPORTANT:
 - Retains the v3.27 scan-devices, local Wi-Fi discovery, PTT, RING, CALL, and network setup behaviour.
 - Increments Android versionName to 3.28 and versionCode to 32.
 - Source update only; run the included GitHub Actions workflow and test on multiple devices.
+
+
+## Version 3.29 — Dual subnet discovery and routed voice
+- Keeps the bridged-LAN multicast discovery path for Mode A (one shared LAN).
+- Adds a SCAN DEVICES probe across both requested IPv4 /24 ranges: 192.168.1.1–192.168.1.254 and 192.168.0.1–192.168.0.254.
+- Adds a discovery request/reply so devices can learn each other's reachable IP addresses across routed subnets.
+- Sends individual RING/CALL/control/audio packets directly to the discovered peer IP.
+- Sends group push-to-talk audio as unicast packets to each discovered online peer, allowing routed-subnet delivery when routing/firewall rules permit it.
+- Retains multicast heartbeat for the shared-LAN mode.
+- IMPORTANT: The app cannot configure routers. Mode B requires bidirectional routing between 192.168.1.0/24 and 192.168.0.0/24, UDP port 47655 permitted in both directions, no client/AP isolation, and compatible firewall rules. A normal unmanaged switch does not create routing or VLAN separation. Two active DHCP servers on one flat LAN can cause unstable gateway assignments; do not enable both DHCP servers on a flat bridged LAN.
+- The two subnets cannot be made mutually reachable by app code alone. If routers do not provide inter-subnet routing, Mode B will not work until router configuration is corrected.
+- Source update only; run GitHub Actions and test with phones on each subnet, including PTT, RING, CALL, reconnect and background operation.
+
+## Version 3.30 – 15-second hold-to-ring and larger controls
+- Hold a staff member's RING button to send a ring alert.
+- Releasing the button sends RING_STOP immediately.
+- A 15-second safety timeout automatically sends RING_STOP if the button remains held.
+- RING and CALL controls are enlarged for easier use on phones.
