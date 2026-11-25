@@ -101,3 +101,12 @@ IMPORTANT:
 - Detects the default IPv4/IPv6 route by checking destination prefix length == 0 instead.
 - No changes to communication, RING, CALL, or PTT behaviour.
 - Source update only; run GitHub Actions to verify compilation.
+
+
+## Version 3.27 — Scan devices
+- Adds a SCAN DEVICES button to the main screen.
+- Scan sends an immediate multicast heartbeat and UDP subnet-broadcast heartbeat on available IPv4 interfaces.
+- Devices running the app on the same bridged LAN can respond through their regular heartbeat loop and appear in the staff list.
+- Adds a NETWORK SETUP button for the three-router LAN/AP guide.
+- Scanning cannot cross routed/NAT subnets or router broadcast isolation. For this to work across two/three routers, configure secondary routers as APs, LAN-to-LAN, DHCP disabled on secondary routers, and disable client isolation.
+- Source update only; build and test on all devices required.

@@ -56,6 +56,7 @@ public class WalkieKeepAliveService extends Service {
         if("AUTO_START".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");startForeground(41,makeNotification("Auto-connect enabled • waiting for Wi-Fi"));registerWifiMonitor();joinLan();}
         else if("JOIN".equals(a)){autoEnabled=true;myName=i.getStringExtra("name");if(myName==null||myName.trim().isEmpty())myName="Staff";startForeground(41,makeNotification("Joining local Wi-Fi"));joinLan();}
         else if("LEAVE".equals(a)){autoEnabled=false;unregisterWifiMonitor();leaveLan();stopForeground(true);stopSelf();}
+        else if("SCAN".equals(a)){if(running){sendHeartbeatImmediately();sendScanBroadcast();publishUsers();emit("Scanning local network for staff devices…",true);}else emit("Waiting for Wi-Fi connection before scanning",false);}
         else if("PTT_START".equals(a)){ptt=true;startMicrophone();}
         else if("PTT_STOP".equals(a)){ptt=false;if(!callActive)stopMicrophone();}
         else if("RING".equals(a)){String target=i.getStringExtra("target");if(running&&target!=null){sendTarget(RING,target,new byte[0]);}else emit("Not connected to Wi-Fi channel",false);}
@@ -114,6 +115,31 @@ public class WalkieKeepAliveService extends Service {
             String localName=getSharedPreferences("walkie",MODE_PRIVATE).getString("name","Staff");
             sendPacket(HEARTBEAT,null,localName.getBytes(StandardCharsets.UTF_8));
         }catch(Exception e){emit("Initial discovery error: "+e.getClass().getSimpleName(),false);}
+    }
+    void sendScanBroadcast(){
+        networkSendExecutor.execute(()->{
+            try{
+                MulticastSocket currentSocket=socket;
+                if(currentSocket==null||currentSocket.isClosed()||wifiInterface==null)return;
+                currentSocket.setBroadcast(true);
+                byte[] name=myName.getBytes(StandardCharsets.UTF_8);
+                if(name.length>48)name=Arrays.copyOf(name,48);
+                byte[] packet=new byte[HEADER+name.length];
+                packet[0]=HEARTBEAT;
+                System.arraycopy(uuidBytes(id.toString()),0,packet,1,16);
+                System.arraycopy(uuidBytes(null),0,packet,17,16);
+                System.arraycopy(name,0,packet,HEADER,name.length);
+                boolean sent=false;
+                for(InterfaceAddress ia:wifiInterface.getInterfaceAddresses()){
+                    InetAddress broadcast=ia.getBroadcastAddress();
+                    if(broadcast!=null){
+                        currentSocket.send(new DatagramPacket(packet,packet.length,broadcast,PORT));
+                        sent=true;
+                    }
+                }
+                if(!sent)emit("Subnet scan unavailable; using local multicast discovery",false);
+            }catch(Exception e){emit("Device scan error: "+e.getClass().getSimpleName(),false);}
+        });
     }
     void sendPacket(byte type,String target,byte[] data){
         final byte[] payload = data == null ? new byte[0] : Arrays.copyOf(data, data.length);

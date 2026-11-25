@@ -59,7 +59,10 @@ public class MainActivity extends Activity {
         joinButton=new Button(this);joinButton.setAllCaps(false);joinButton.setText("CONNECTED AUTOMATICALLY");LinearLayout.LayoutParams jp=new LinearLayout.LayoutParams(-1,dp(48));jp.topMargin=dp(7);root.addView(joinButton,jp);joinButton.setOnClickListener(v->{if(!joined)join();else Toast.makeText(this,"Auto-connect is active. The channel stays connected while Wi-Fi is available.",Toast.LENGTH_LONG).show();});
         networkLabel=txt("Wi-Fi: checking",12,Color.DKGRAY);networkLabel.setPadding(0,dp(7),0,dp(2));root.addView(networkLabel);
         networkDetails=txt("Network details: checking…",11,Color.DKGRAY);networkDetails.setPadding(0,dp(2),0,dp(2));root.addView(networkDetails);
-        Button setup=new Button(this);setup.setText("3-ROUTER NETWORK SETUP");setup.setAllCaps(false);setup.setOnClickListener(v->showRouterGuide());root.addView(setup,new LinearLayout.LayoutParams(-1,dp(42)));
+        LinearLayout toolsRow=new LinearLayout(this);toolsRow.setOrientation(0);
+        Button scan=new Button(this);scan.setText("SCAN DEVICES");scan.setAllCaps(false);scan.setOnClickListener(v->{command("SCAN");Toast.makeText(this,"Scanning local network…",Toast.LENGTH_SHORT).show();});toolsRow.addView(scan,new LinearLayout.LayoutParams(0,dp(44),1));
+        Button setup=new Button(this);setup.setText("NETWORK SETUP");setup.setAllCaps(false);setup.setOnClickListener(v->showRouterGuide());toolsRow.addView(setup,new LinearLayout.LayoutParams(0,dp(44),1));
+        root.addView(toolsRow);
         statusLabel=txt("Not connected",12,Color.RED);root.addView(statusLabel);
         LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(dp(12),dp(10),dp(12),dp(10));card.setBackground(shape(Color.WHITE,12));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.topMargin=dp(9);root.addView(card,cp);
         callLabel=txt("Ready to join",15,Color.rgb(20,55,42));callLabel.setTypeface(null,Typeface.BOLD);card.addView(callLabel);
